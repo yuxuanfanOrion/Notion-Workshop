@@ -44,6 +44,7 @@ export class NotionService {
     } catch {
       this.cachedPages = [];
     }
+    await this.migrateLegacyIndexFiles();
   }
 
   async isConfigured(): Promise<boolean> {
@@ -94,6 +95,7 @@ export class NotionService {
 
       this.cachedPages = [rootPage];
       await this.savePagesCache();
+      await this.migrateLegacyIndexFiles();
       this.status = "Idle";
       return this.cachedPages;
     } catch (error) {
@@ -184,15 +186,15 @@ export class NotionService {
   }
 
   private async writePageFolder(parentFolder: vscode.Uri, page: NotionPage): Promise<vscode.Uri> {
-    const safeName = this.formatFolderName(page.title, page.id);
-    const pageFolder = vscode.Uri.joinPath(parentFolder, safeName);
-    await vscode.workspace.fs.createDirectory(pageFolder);
+    const baseName = await this.resolveUniqueBaseName(parentFolder, this.formatBaseName(page.title), page.id);
+    const childContainer = vscode.Uri.joinPath(parentFolder, baseName);
+    await vscode.workspace.fs.createDirectory(childContainer);
 
-    // Write index.md (page content)
-    const indexFile = vscode.Uri.joinPath(pageFolder, "index.md");
+    // Write <title>.md (page content) alongside its folder
+    const pageFile = vscode.Uri.joinPath(parentFolder, `${baseName}.md`);
     const fileContent = this.buildFileContent(page);
-    await vscode.workspace.fs.writeFile(indexFile, Buffer.from(fileContent, "utf8"));
-    this.rememberPageFile(page.id, indexFile);
+    await vscode.workspace.fs.writeFile(pageFile, Buffer.from(fileContent, "utf8"));
+    this.rememberPageFile(page.id, pageFile);
 
     // Recursively write child pages
     if (page.children && page.children.length > 0) {
@@ -203,11 +205,11 @@ export class NotionService {
         } catch (error) {
           console.error(`[NotionService] Failed to get content for ${child.id}:`, error);
         }
-        await this.writePageFolder(pageFolder, child);
+        await this.writePageFolder(childContainer, child);
       }
     }
 
-    return pageFolder;
+    return childContainer;
   }
 
   async pushPage(pageId: string): Promise<void> {
@@ -237,10 +239,42 @@ export class NotionService {
   }
 
   async openPage(pageId: string): Promise<vscode.TextEditor> {
-    const pageFolder = await this.pullPage(pageId);
-    const indexFile = vscode.Uri.joinPath(pageFolder, "index.md");
-    const doc = await vscode.workspace.openTextDocument(indexFile);
+    await this.pullPage(pageId);
+    const pageFile = await this.findPageFile(pageId);
+    if (!pageFile) {
+      throw new Error("Local page file not found after pull.");
+    }
+    const doc = await vscode.workspace.openTextDocument(pageFile);
     return vscode.window.showTextDocument(doc, { preview: false });
+  }
+
+  async createPage(parentPageId: string, title: string): Promise<NotionPage> {
+    this.status = "Creating...";
+    const pageInfo = await this.apiClient.createPage(parentPageId, title);
+    const newPage: NotionPage = {
+      id: pageInfo.id,
+      title: pageInfo.title,
+      content: "",
+      updatedAt: new Date().toISOString(),
+      parentId: parentPageId,
+      children: []
+    };
+
+    let parent = this.findPage(this.cachedPages, parentPageId);
+    if (!parent) {
+      await this.refreshPages();
+      parent = this.findPage(this.cachedPages, parentPageId);
+    }
+    if (!parent) {
+      this.status = "Idle";
+      throw new Error("Parent page not found. Please refresh pages and try again.");
+    }
+    parent.children = parent.children || [];
+    parent.children.push(newPage);
+
+    await this.savePagesCache();
+    this.status = "Idle";
+    return newPage;
   }
 
   async getPageIdFromDocument(document: vscode.TextDocument): Promise<string | undefined> {
@@ -301,9 +335,133 @@ export class NotionService {
     return undefined;
   }
 
-  private formatFolderName(title: string, id: string): string {
-    const safeTitle = title.replace(/[^\w\u4e00-\u9fa5-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-    return `${safeTitle || "notion"}-${id}`;
+  private formatBaseName(title: string): string {
+    return title.replace(/[^\w\u4e00-\u9fa5-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "notion";
+  }
+
+  private async migrateLegacyIndexFiles(): Promise<void> {
+    const syncFolder = await this.resolveSyncFolder();
+    try {
+      await vscode.workspace.fs.stat(syncFolder);
+    } catch {
+      return;
+    }
+
+    await this.migrateFolderRecursive(syncFolder);
+  }
+
+  private async migrateFolderRecursive(folder: vscode.Uri): Promise<void> {
+    let currentFolder = folder;
+    let entries: [string, vscode.FileType][];
+    try {
+      entries = await vscode.workspace.fs.readDirectory(currentFolder);
+    } catch {
+      return;
+    }
+
+    const hasIndex = entries.some(([name, type]) => name === "index.md" && type === vscode.FileType.File);
+    if (hasIndex) {
+      const indexFile = vscode.Uri.joinPath(currentFolder, "index.md");
+      const pageId = await this.extractPageId(indexFile);
+      const parentFolder = vscode.Uri.joinPath(currentFolder, "..");
+      const fallbackTitle = this.guessTitleFromFolder(currentFolder);
+      const title = pageId ? this.findPage(this.cachedPages, pageId)?.title || fallbackTitle : fallbackTitle;
+      const baseName = this.formatBaseName(title || "notion");
+      const finalBase = await this.resolveUniqueBaseName(parentFolder, baseName, pageId || "");
+      const targetFolder = vscode.Uri.joinPath(parentFolder, finalBase);
+
+      if (currentFolder.fsPath !== targetFolder.fsPath) {
+        try {
+          await vscode.workspace.fs.rename(currentFolder, targetFolder, { overwrite: false });
+          currentFolder = targetFolder;
+        } catch {
+          // If rename fails, continue in-place
+        }
+      }
+
+      const targetFile = vscode.Uri.joinPath(parentFolder, `${finalBase}.md`);
+      try {
+        await vscode.workspace.fs.rename(vscode.Uri.joinPath(currentFolder, "index.md"), targetFile, { overwrite: true });
+      } catch {
+        // Ignore rename failure
+      }
+
+      if (pageId) {
+        this.rememberPageFile(pageId, targetFile);
+      }
+    }
+
+    // Re-read entries after potential rename
+    try {
+      entries = await vscode.workspace.fs.readDirectory(currentFolder);
+    } catch {
+      return;
+    }
+
+    for (const [name, type] of entries) {
+      if (type === vscode.FileType.Directory) {
+        await this.migrateFolderRecursive(vscode.Uri.joinPath(currentFolder, name));
+      }
+    }
+  }
+
+  private async extractPageId(fileUri: vscode.Uri): Promise<string | undefined> {
+    try {
+      const raw = await vscode.workspace.fs.readFile(fileUri);
+      const text = Buffer.from(raw).toString("utf8");
+      const firstLine = text.split(/\r?\n/, 1)[0] || "";
+      const match = firstLine.match(/notion-id:\s*([\w-]+)/i);
+      return match?.[1];
+    } catch {
+      return undefined;
+    }
+  }
+
+  private guessTitleFromFolder(folder: vscode.Uri): string {
+    const name = path.basename(folder.fsPath);
+    const match = name.match(/^(.*)-[0-9a-fA-F-]{6,}$/);
+    return match?.[1] || name;
+  }
+
+  private async resolveUniqueBaseName(parentFolder: vscode.Uri, baseName: string, pageId: string): Promise<string> {
+    for (let i = 0; i < 200; i++) {
+      const candidate = i === 0 ? baseName : `${baseName}_${i}`;
+      const candidateFile = vscode.Uri.joinPath(parentFolder, `${candidate}.md`);
+      const candidateFolder = vscode.Uri.joinPath(parentFolder, candidate);
+
+      const fileMatches = pageId ? await this.fileHasPageId(candidateFile, pageId) : false;
+      if (fileMatches) {
+        return candidate;
+      }
+
+      const fileExists = await this.exists(candidateFile);
+      const folderExists = await this.exists(candidateFolder);
+      if (!fileExists && !folderExists) {
+        return candidate;
+      }
+    }
+    return `${baseName}_${Date.now()}`;
+  }
+
+  private async fileHasPageId(fileUri: vscode.Uri, pageId: string): Promise<boolean> {
+    try {
+      const raw = await vscode.workspace.fs.readFile(fileUri);
+      const text = Buffer.from(raw).toString("utf8");
+      const firstLine = text.split(/\r?\n/, 1)[0] || "";
+      const match = firstLine.match(/notion-id:\s*([\w-]+)/i);
+      return match?.[1] === pageId;
+    } catch {
+      return false;
+    }
+  }
+
+  private async exists(uri: vscode.Uri): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private buildFileContent(page: NotionPage): string {

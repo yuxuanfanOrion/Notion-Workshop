@@ -308,6 +308,23 @@ export class NotionApiClient {
     }
   }
 
+  async createPage(parentPageId: string, title: string): Promise<NotionPageInfo> {
+    const response = await this.request<NotionPageResponse>("POST", "/pages", {
+      parent: { page_id: parentPageId },
+      properties: {
+        title: {
+          title: [{ type: "text", text: { content: title } }]
+        }
+      }
+    });
+
+    return {
+      id: response.id,
+      title,
+      hasChildren: false
+    };
+  }
+
   private markdownToBlocks(markdown: string): unknown[] {
     const lines = markdown.split("\n");
     const blocks: unknown[] = [];

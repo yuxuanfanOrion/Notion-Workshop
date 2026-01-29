@@ -41,10 +41,10 @@ class PageItem extends NotionTreeItem {
     this.contextValue = "page";
     this.tooltip = page.title;
     this.description = page.id.substring(0, 8) + "...";
-    // Pull on click
+    // Open (auto-pull) on click
     this.command = {
-      command: "notion-workshop.pull",
-      title: "Pull Page",
+      command: "notion-workshop.openPage",
+      title: "Open Page",
       arguments: [this],
     };
   }

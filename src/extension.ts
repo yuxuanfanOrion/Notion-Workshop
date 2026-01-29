@@ -141,18 +141,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  // Pull page command - supports tree view and command palette
+  // Create page command - supports tree view and command palette
   context.subscriptions.push(
-    vscode.commands.registerCommand("notion-workshop.pull", async (item?: any) => {
-      let pageId: string | undefined;
-      let pageTitle: string | undefined;
-      
-      // From tree view click
+    vscode.commands.registerCommand("notion-workshop.createPage", async (item?: any) => {
+      let parentPageId: string | undefined;
+      let parentTitle: string | undefined;
+
       if (item && item.page) {
-        pageId = item.page.id;
-        pageTitle = item.page.title;
+        parentPageId = item.page.id;
+        parentTitle = item.page.title;
       } else {
-        // From command palette
         const pages = await notionService.listPages();
         const flatPages = notionService.flattenPages(pages);
         if (flatPages.length === 0) {
@@ -161,34 +159,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const pick = await vscode.window.showQuickPick(
           flatPages.map((p) => ({ label: p.path, description: p.page.id })),
-          { placeHolder: "Select a Notion page to pull" }
+          { placeHolder: "Select a parent page" }
         );
         if (!pick) {
           return;
         }
-        pageId = pick.description;
-        pageTitle = pick.label;
+        parentPageId = pick.description;
+        parentTitle = pick.label;
       }
-      
-      if (!pageId) {
+
+      if (!parentPageId) {
         return;
       }
-      
+
+      const title = await vscode.window.showInputBox({
+        prompt: `New page title${parentTitle ? ` (under ${parentTitle})` : ""}`,
+        validateInput: (value) => (value.trim().length === 0 ? "Title cannot be empty" : undefined)
+      });
+
+      if (!title) {
+        return;
+      }
+
       try {
-        await vscode.window.withProgress(
+        const newPage = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: `Pulling ${pageTitle || pageId}...`,
+            title: `Creating ${title}...`,
             cancellable: false,
           },
           async () => {
-            await notionService.pullPage(pageId!);
+            return await notionService.createPage(parentPageId!, title.trim());
           }
         );
-        logger.add(`Pulled page ${pageTitle || pageId}`);
-        void vscode.window.showInformationMessage(`Pulled ${pageTitle || pageId}`);
+
+        logger.add(`Created page ${title}`);
+        treeProvider.refresh();
+        await notionService.openPage(newPage.id);
       } catch (error) {
-        logger.add(`Pull failed: ${(error as Error).message}`, "error");
+        logger.add(`Create failed: ${(error as Error).message}`, "error");
         void vscode.window.showErrorMessage((error as Error).message);
       }
     })

@@ -11,9 +11,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:notion-workshop.pull",
-    "onCommand:notion-workshop.push",
-    "onCommand:notion-workshop.openPage",
     "onView:notion-workshop.sidebar",
     "onStartupFinished",
     "*"
@@ -40,22 +37,16 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "notion-workshop.pull",
-        "title": "Notion: Pull",
-        "category": "Notion",
-        "icon": "$(cloud-download)"
-      },
-      {
         "command": "notion-workshop.push",
         "title": "Notion: Push",
         "category": "Notion",
         "icon": "$(cloud-upload)"
       },
       {
-        "command": "notion-workshop.openPage",
-        "title": "Notion: Open Page",
+        "command": "notion-workshop.createPage",
+        "title": "Notion: New Page",
         "category": "Notion",
-        "icon": "$(go-to-file)"
+        "icon": "$(add)"
       }
     ],
     "configuration": {
@@ -113,41 +104,36 @@
           "group": "navigation@2"
         },
         {
-          "command": "notion-workshop.logout",
+          "command": "notion-workshop.createPage",
           "when": "view == notion-workshop.pages",
           "group": "navigation@3"
+        },
+        {
+          "command": "notion-workshop.logout",
+          "when": "view == notion-workshop.pages",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
         {
-          "command": "notion-workshop.openPage",
+          "command": "notion-workshop.push",
           "when": "view == notion-workshop.pages && viewItem == page",
           "group": "inline@1"
         },
         {
-          "command": "notion-workshop.pull",
+          "command": "notion-workshop.createPage",
           "when": "view == notion-workshop.pages && viewItem == page",
           "group": "inline@2"
         },
         {
           "command": "notion-workshop.push",
           "when": "view == notion-workshop.pages && viewItem == page",
-          "group": "inline@3"
-        },
-        {
-          "command": "notion-workshop.openPage",
-          "when": "view == notion-workshop.pages && viewItem == page",
-          "group": "1_actions@1"
-        },
-        {
-          "command": "notion-workshop.pull",
-          "when": "view == notion-workshop.pages && viewItem == page",
-          "group": "1_actions@2"
-        },
-        {
-          "command": "notion-workshop.push",
-          "when": "view == notion-workshop.pages && viewItem == page",
           "group": "1_actions@3"
+        },
+        {
+          "command": "notion-workshop.createPage",
+          "when": "view == notion-workshop.pages && viewItem == page",
+          "group": "1_actions@4"
         }
       ]
     }
