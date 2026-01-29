@@ -3,6 +3,8 @@ Hi, this is [Eason](https://yuxuanfanorion.github.io/).
 
 This project is still under development. Feel free to open issues or PRs.
 
+This project will be published to the VS Code Marketplace later.
+
 A VS Code extension that lets you browse Notion pages, pull them to local Markdown, edit, and push changes back to Notion.
 
 ## Features
