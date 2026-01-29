@@ -1,0 +1,5 @@
+fastapi==0.111.0
+uvicorn==0.30.0
+notion-client==2.2.1
+python-dotenv==1.0.1
+markdown==3.6

@@ -1,0 +1,44 @@
+# Build output
+out/
+dist/
+
+# Dependencies
+node_modules/
+
+# VS Code test
+.vscode-test/
+
+# Packaged extension
+*.vsix
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Cache
+.cache/
+*.log
+npm-debug.log*
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+
+# Reference project
+Overleaf-Workshop/
+
+# Notion sync data (optional)
+# notion-sync/
+
+# Page cache
+pages-cache.json

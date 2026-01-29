@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notion Markdown 实时编辑</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Notion Markdown 实时编辑</h1>
+      <div class="actions">
+        <select id="page-select"></select>
+        <button id="page-btn">选择页面</button>
+        <button id="refresh-btn">刷新页面</button>
+        <button id="pull-btn">从 Notion 拉取</button>
+        <span id="status">未连接</span>
+      </div>
+    </header>
+    <main>
+      <section class="pane">
+        <h2>编辑</h2>
+        <textarea id="editor" spellcheck="false"></textarea>
+      </section>
+      <section class="pane">
+        <h2>预览</h2>
+        <div id="preview" class="preview"></div>
+      </section>
+    </main>
+    <footer>
+      <span>提示：在 VS Code 中编辑本地 Markdown 文件会自动同步到此界面与 Notion。</span>
+    </footer>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
