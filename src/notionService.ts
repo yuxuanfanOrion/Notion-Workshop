@@ -136,7 +136,7 @@ export class NotionService {
 
       // Parallel fetch for children that have sub-children (with concurrency limit)
       const childrenWithSubs = childPageObjects.filter((_, i) => childPages[i].hasChildren);
-      const CONCURRENCY_LIMIT = 5;
+      const CONCURRENCY_LIMIT = 10;
       
       for (let i = 0; i < childrenWithSubs.length; i += CONCURRENCY_LIMIT) {
         const batch = childrenWithSubs.slice(i, i + CONCURRENCY_LIMIT);

@@ -72,9 +72,9 @@ export class NotionApiClient {
   private readonly baseUrl = "https://api.notion.com/v1";
   private readonly apiVersion = "2022-06-28";
   
-  // Request cache with TTL (5 seconds for read operations)
+  // Request cache with TTL (30 seconds for read operations)
   private readonly requestCache = new Map<string, { data: unknown; timestamp: number }>();
-  private readonly CACHE_TTL_MS = 5000;
+  private readonly CACHE_TTL_MS = 30000;
 
   constructor(private readonly authManager: AuthManager) {}
 
@@ -130,11 +130,21 @@ export class NotionApiClient {
 
     const headers = await this.getHeaders();
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined
-    });
+    // Add 30-second timeout using AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${endpoint}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const error = await response.text();

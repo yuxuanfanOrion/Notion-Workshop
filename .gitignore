@@ -45,3 +45,5 @@ docs/README.developer.md
 
 # Page cache
 pages-cache.json
+
+scripts/auto_push.sh

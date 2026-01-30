@@ -2,8 +2,22 @@
   "name": "notion-workshop",
   "displayName": "Notion Workshop",
   "description": "Edit and sync Notion pages inside VS Code.",
-  "version": "0.0.1",
-  "publisher": "local",
+  "version": "0.1.0",
+  "publisher": "yfanorion",
+  "license": "MIT",
+  "icon": "resources/icon.png",
+  "author": "yfanorion",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yfanorion/Notion-Workshop"
+  },
+  "keywords": [
+    "notion",
+    "markdown",
+    "sync",
+    "notes",
+    "productivity"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -159,6 +173,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.3.10",
     "mocha": "^10.2.0",
+    "sharp": "^0.34.5",
     "typescript": "^5.5.4"
   }
 }

@@ -1,0 +1,56 @@
+# Source files (compiled to out/)
+src/**
+**/*.ts
+
+# Development files - use explicit patterns
+.vscode/**
+.vscode-test
+.vscode-test/**
+.github/**
+.git/**
+.gitignore
+.claude
+.claude/**
+
+# Reference project - explicit
+Overleaf-Workshop
+Overleaf-Workshop/**
+
+# Environment and secrets
+.env
+.env.*
+
+# Build artifacts
+**/*.map
+tsconfig.json
+package-lock.json
+
+# Documentation (keep README)
+docs/**
+
+# Python environment
+.venv/**
+app/**
+requirements.txt
+
+# Test files
+**/test/**
+out/test/**
+
+# Data and cache
+data/**
+pages-cache.json
+scripts/**
+notion-sync/**
+
+# Node modules (not needed for extension)
+node_modules/**
+
+# Misc
+.DS_Store
+*.log
+*.vsix
+*.jpg
+
+# Design files (exclude drafts, keep notion.svg for activity bar)
+resources/icon-design-*.svg
