@@ -1,4 +1,5 @@
 # Notion Workshop
+
 Hi, this is [Eason](https://yuxuanfanorion.github.io/).
 
 This project is still under development. Feel free to open issues or PRs.
@@ -7,62 +8,135 @@ This project will be published to the VS Code Marketplace later.
 
 A VS Code extension that lets you browse Notion pages, open them locally as Markdown, edit, and push changes back to Notion.
 
-## Features
+## ✨ Features
 
-- Native tree view for pages and sub-pages
-- Click a page to open it (auto-pull)
-- Auto-push on save (manual or auto-save)
-- Commands for login, refresh, push, and new page
-- Local sync folders with per-page `<title>.md` (file + folder side by side)
+- 🌳 Native tree view for pages and sub-pages
+- 📄 Click a page to open it (auto-pull)
+- 🔄 Auto-push on save with smart debouncing (2s delay)
+- ⚡ Parallel API requests for fast sync
+- 💾 Request caching to reduce API calls
+- 🗂️ Local sync folders with per-page `<title>.md` (file + folder side by side)
 
-## Requirements
+## 📋 Requirements
 
 - VS Code 1.85+
 - A Notion integration token
 - The root page shared with your integration
 
-## Quick Start
+---
 
-1. Open the Command Palette and run **Notion: Login/Configure**.
-2. Enter your Notion integration token.
-3. Enter the root page ID (from the Notion page URL).
-4. Click **Refresh** in the sidebar.
-5. Click a page to open it (auto-pull on open).
-6. Edit the page `<title>.md` and save to auto-push.
-7. Use **Notion: New Page** to create a child page under the selected page.
+## 🚀 Get Started
 
-## Commands
+### Step 1: Create a Notion Integration
 
-- **Notion: Login/Configure**
-- **Notion: Refresh Pages**
-- **Notion: Push**
-- **Notion: New Page**
+1. Go to [Notion Integrations](https://www.notion.so/my-integrations)
+2. Click **+ New integration**
+3. Give it a name (e.g., "VS Code Workshop")
+4. Select the workspace you want to connect
+5. Click **Submit** and copy the **Internal Integration Token** (starts with `ntn_` or `secret_`)
 
-## Configuration
+### Step 2: Share Pages with Your Integration
+
+1. Open the Notion page you want to sync
+2. Click the **•••** menu in the top right
+3. Select **Add connections** → Choose your integration
+4. All child pages will be accessible automatically
+
+### Step 3: Configure the Extension
+
+1. Open VS Code
+2. Look for the **Notion** icon in the Activity Bar (left sidebar)
+3. Click **Configure Notion** or run command: `Notion: Login/Configure`
+4. Paste your integration token
+
+### Step 4: Start Working
+
+1. Click **Refresh** (🔄) in the Notion sidebar
+2. Your shared pages will appear in the tree view
+3. Click any page to open it locally as Markdown
+4. Edit and save — changes auto-push to Notion after 2 seconds
+
+### Environment Variables (Optional)
+
+For development or advanced usage, create a `.env` file:
+
+```env
+NOTION_TOKEN=ntn_your_token_here
+MARKDOWN_FILE=./data/note.md
+HOST=127.0.0.1
+PORT=8000
+```
+
+---
+
+## 📖 Quick Reference
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `Notion: Login/Configure` | Set up your Notion token |
+| `Notion: Refresh Pages` | Reload pages from Notion |
+| `Notion: Push` | Manually push current page |
+| `Notion: New Page` | Create a child page |
+| `Notion: Logout` | Clear configuration |
+
+### Settings
 
 Open VS Code settings and search for **Notion Workshop**:
 
-- `notionWorkshop.defaultSyncPath`: Local sync folder (relative to workspace root)
-- `notionWorkshop.filter`: Title filter (substring match)
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `notionWorkshop.defaultSyncPath` | Local sync folder | `notion-sync` |
+| `notionWorkshop.filter` | Title filter (substring match) | `""` |
 
-## Local Files
+---
 
-Each page is stored as a file and a folder (for its children) at the same level:
+## 📁 Local File Structure
 
 ```
-<sync-path>/<page-title>.md
-<sync-path>/<page-title>/
-
-Child pages live under the parent folder and follow the same pattern:
-
-<sync-path>/<page-title>/<child-title>.md
-<sync-path>/<page-title>/<child-title>/
+notion-sync/
+├── My-Project.md           # Parent page content
+├── My-Project/             # Folder for child pages
+│   ├── Design-Doc.md       # Child page content
+│   ├── Design-Doc/         # Grandchildren folder
+│   └── Meeting-Notes.md    # Another child page
 ```
 
-The first line contains a metadata comment with the page ID.
+The first line of each `.md` file contains a metadata comment:
+```markdown
+<!-- notion-id: abc123-def456-... -->
+```
 
-Legacy migration: old `index.md` structures are automatically migrated to the new layout.
+> **Note:** Legacy `index.md` structures are automatically migrated to the new layout.
 
-## Credits
+---
+
+## 🛠️ Development
+
+### Build from Source
+
+```bash
+git clone https://github.com/YuxuanFanOrion/Notion-Workshop.git
+cd Notion-Workshop
+npm install
+npm run compile
+```
+
+### Run in Development
+
+1. Open the project in VS Code
+2. Press `F5` to launch the Extension Development Host
+3. The extension will be available in the new window
+
+---
+
+## 🙏 Credits
 
 Thanks to the [Overleaf-Workshop](https://github.com/overleaf-workshop/Overleaf-Workshop) repository for inspiration.
+
+---
+
+## 📄 License
+
+MIT

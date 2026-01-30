@@ -111,6 +111,7 @@ export class NotionService {
 
   clearCache(): void {
     this.cachedPages = [];
+    this.apiClient.clearCache();
   }
 
   private async fetchChildPages(page: NotionPage, depth = 0): Promise<void> {
@@ -123,21 +124,26 @@ export class NotionService {
       const childPages = await this.apiClient.getChildPages(page.id);
       page.children = [];
 
-      for (const child of childPages) {
-        const childPage: NotionPage = {
-          id: child.id,
-          title: child.title,
-          content: "",
-          updatedAt: new Date().toISOString(),
-          parentId: page.id
-        };
+      // Build child page objects
+      const childPageObjects: NotionPage[] = childPages.map((child) => ({
+        id: child.id,
+        title: child.title,
+        content: "",
+        updatedAt: new Date().toISOString(),
+        parentId: page.id,
+        children: undefined
+      }));
 
-        if (child.hasChildren) {
-          await this.fetchChildPages(childPage, depth + 1);
-        }
-
-        page.children.push(childPage);
+      // Parallel fetch for children that have sub-children (with concurrency limit)
+      const childrenWithSubs = childPageObjects.filter((_, i) => childPages[i].hasChildren);
+      const CONCURRENCY_LIMIT = 5;
+      
+      for (let i = 0; i < childrenWithSubs.length; i += CONCURRENCY_LIMIT) {
+        const batch = childrenWithSubs.slice(i, i + CONCURRENCY_LIMIT);
+        await Promise.all(batch.map((childPage) => this.fetchChildPages(childPage, depth + 1)));
       }
+
+      page.children = childPageObjects;
     } catch (error) {
       console.error(`[NotionService] Failed to fetch children for ${page.id}:`, error);
     }
@@ -206,13 +212,23 @@ export class NotionService {
 
     // Recursively write child pages
     if (page.children && page.children.length > 0) {
+      // Parallel fetch content for all children (with concurrency limit)
+      const CONTENT_FETCH_BATCH_SIZE = 5;
+      for (let i = 0; i < page.children.length; i += CONTENT_FETCH_BATCH_SIZE) {
+        const batch = page.children.slice(i, i + CONTENT_FETCH_BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (child) => {
+            try {
+              child.content = await this.apiClient.getPageContent(child.id);
+            } catch (error) {
+              console.error(`[NotionService] Failed to get content for ${child.id}:`, error);
+            }
+          })
+        );
+      }
+
+      // Write folders sequentially to avoid file system race conditions
       for (const child of page.children) {
-        // Also get content for child pages
-        try {
-          child.content = await this.apiClient.getPageContent(child.id);
-        } catch (error) {
-          console.error(`[NotionService] Failed to get content for ${child.id}:`, error);
-        }
         await this.writePageFolder(childContainer, child);
       }
     }

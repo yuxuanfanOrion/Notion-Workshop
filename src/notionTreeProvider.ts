@@ -90,6 +90,7 @@ export class NotionTreeProvider
     this._onDidChangeTreeData.event;
 
   private pageCache: Map<string, NotionPage[]> = new Map();
+  private pendingRefresh: Map<string, Promise<NotionPage[]>> = new Map();
 
   constructor(
     private readonly notionService: NotionService,
@@ -98,7 +99,25 @@ export class NotionTreeProvider
 
   refresh(): void {
     this.pageCache.clear();
+    this.pendingRefresh.clear();
     this._onDidChangeTreeData.fire();
+  }
+
+  // Deduplicated refresh - prevents concurrent requests for the same root
+  private async refreshPagesForRootDeduped(rootId: string): Promise<NotionPage[]> {
+    const pending = this.pendingRefresh.get(rootId);
+    if (pending) {
+      return pending;
+    }
+    
+    const promise = this.notionService.refreshPagesForRoot(rootId);
+    this.pendingRefresh.set(rootId, promise);
+    
+    try {
+      return await promise;
+    } finally {
+      this.pendingRefresh.delete(rootId);
+    }
   }
 
   getTreeItem(element: NotionTreeItem): vscode.TreeItem {
@@ -120,7 +139,7 @@ export class NotionTreeProvider
           const cachedRoots = await this.notionService.listPages();
           let root = cachedRoots.find((page) => page.id === activeRootId);
           if (!root) {
-            const refreshed = await this.notionService.refreshPagesForRoot(activeRootId);
+            const refreshed = await this.refreshPagesForRootDeduped(activeRootId);
             root = refreshed.find((page) => page.id === activeRootId);
           }
           if (!root) {
@@ -153,7 +172,7 @@ export class NotionTreeProvider
       try {
         const cachedRoot = await this.notionService.listPages();
         const found = cachedRoot.find((page) => page.id === element.page.id);
-        const root = found || (await this.notionService.refreshPagesForRoot(element.page.id)).find(
+        const root = found || (await this.refreshPagesForRootDeduped(element.page.id)).find(
           (page) => page.id === element.page.id
         );
         const children = root?.children || [];

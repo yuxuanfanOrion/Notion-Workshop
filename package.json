@@ -11,9 +11,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:notion-workshop.sidebar",
-    "onStartupFinished",
-    "*"
+    "onView:notion-workshop.pages"
   ],
   "main": "./out/extension.js",
   "contributes": {

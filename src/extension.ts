@@ -19,16 +19,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(treeView);
   console.log("[Notion Workshop] TreeView registered");
 
-  try {
-    console.log("[Notion Workshop] Ensuring storage...");
-    await notionService.ensureStorage();
+  // Non-blocking storage initialization (runs in background)
+  notionService.ensureStorage().then(() => {
     console.log("[Notion Workshop] Storage initialized");
-  } catch (error) {
+    treeProvider.refresh(); // Refresh tree after cache is loaded
+  }).catch((error) => {
     const message = (error as Error).message || "Failed to initialize storage";
     console.error("[Notion Workshop] Storage init failed:", error);
     logger.add(message, "error");
     void vscode.window.showErrorMessage(message);
-  }
+  });
 
   logger.add("Notion Workshop started");
   console.log("[Notion Workshop] Extension activated successfully");
@@ -278,34 +278,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  // Auto-push on save
+  // Auto-push on save with debounce
+  const autoPushDebounceMap = new Map<string, NodeJS.Timeout>();
+  const AUTO_PUSH_DELAY_MS = 2000; // Wait 2 seconds after last save
+
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (document) => {
       const pageId = await notionService.getPageIdFromDocument(document);
       if (!pageId) {
         return;
       }
-      try {
-        await vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Notification,
-            title: "Auto-pushing to Notion...",
-            cancellable: false,
-          },
-          async () => {
-            await notionService.pushPage(pageId);
-          }
-        );
-        logger.add("Auto-pushed page");
-        void vscode.window.showInformationMessage("Auto-pushed to Notion");
-      } catch (error) {
-        logger.add(`Auto-push failed: ${(error as Error).message}`, "error");
-        void vscode.window.showErrorMessage(`Auto-push failed: ${(error as Error).message}`);
+
+      // Clear existing debounce timer for this page
+      const existingTimer = autoPushDebounceMap.get(pageId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
       }
+
+      // Set new debounce timer
+      const timer = setTimeout(async () => {
+        autoPushDebounceMap.delete(pageId);
+        try {
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: "Auto-pushing to Notion...",
+              cancellable: false,
+            },
+            async () => {
+              await notionService.pushPage(pageId);
+            }
+          );
+          logger.add("Auto-pushed page");
+          void vscode.window.showInformationMessage("Auto-pushed to Notion");
+        } catch (error) {
+          logger.add(`Auto-push failed: ${(error as Error).message}`, "error");
+          void vscode.window.showErrorMessage(`Auto-push failed: ${(error as Error).message}`);
+        }
+      }, AUTO_PUSH_DELAY_MS);
+
+      autoPushDebounceMap.set(pageId, timer);
     })
   );
 
-  logger.add("Notion Workshop started");
+  // Cleanup debounce timers on deactivate
+  context.subscriptions.push({
+    dispose: () => {
+      for (const timer of autoPushDebounceMap.values()) {
+        clearTimeout(timer);
+      }
+      autoPushDebounceMap.clear();
+    }
+  });
 }
 
 export function deactivate(): void {

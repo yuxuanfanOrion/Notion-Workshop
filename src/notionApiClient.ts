@@ -71,6 +71,10 @@ interface NotionBlocksResponse {
 export class NotionApiClient {
   private readonly baseUrl = "https://api.notion.com/v1";
   private readonly apiVersion = "2022-06-28";
+  
+  // Request cache with TTL (5 seconds for read operations)
+  private readonly requestCache = new Map<string, { data: unknown; timestamp: number }>();
+  private readonly CACHE_TTL_MS = 5000;
 
   constructor(private readonly authManager: AuthManager) {}
 
@@ -86,7 +90,44 @@ export class NotionApiClient {
     };
   }
 
+  private getCachedResult<T>(cacheKey: string): T | undefined {
+    const cached = this.requestCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+      return cached.data as T;
+    }
+    if (cached) {
+      this.requestCache.delete(cacheKey);
+    }
+    return undefined;
+  }
+
+  private setCachedResult(cacheKey: string, data: unknown): void {
+    this.requestCache.set(cacheKey, { data, timestamp: Date.now() });
+    // Cleanup old entries if cache grows too large
+    if (this.requestCache.size > 100) {
+      const now = Date.now();
+      for (const [key, value] of this.requestCache) {
+        if (now - value.timestamp > this.CACHE_TTL_MS) {
+          this.requestCache.delete(key);
+        }
+      }
+    }
+  }
+
+  clearCache(): void {
+    this.requestCache.clear();
+  }
+
   private async request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
+    // Only cache GET requests
+    const cacheKey = method === "GET" ? `${method}:${endpoint}` : "";
+    if (cacheKey) {
+      const cached = this.getCachedResult<T>(cacheKey);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
     const headers = await this.getHeaders();
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -101,7 +142,13 @@ export class NotionApiClient {
       throw new Error(`Notion API error: ${response.status} - ${error}`);
     }
 
-    return (await response.json()) as T;
+    const result = (await response.json()) as T;
+    
+    if (cacheKey) {
+      this.setCachedResult(cacheKey, result);
+    }
+    
+    return result;
   }
 
   private async getBlock(blockId: string): Promise<NotionBlockResponse> {
@@ -338,16 +385,23 @@ export class NotionApiClient {
   }
 
   async updatePageContent(pageId: string, markdown: string): Promise<void> {
-    // First delete all existing blocks
+    // First delete all existing blocks (parallel with concurrency limit)
     const existingBlocks = await this.getBlockChildren(pageId);
-    for (const block of existingBlocks) {
-      if (block.type !== "child_page" && block.type !== "child_database") {
-        try {
-          await this.request("DELETE", `/blocks/${block.id}`);
-        } catch (error) {
-          console.error("[NotionApiClient] Failed to delete block:", error);
-        }
-      }
+    const blocksToDelete = existingBlocks.filter(
+      (block) => block.type !== "child_page" && block.type !== "child_database"
+    );
+    
+    // Delete blocks in parallel batches of 10
+    const DELETE_BATCH_SIZE = 10;
+    for (let i = 0; i < blocksToDelete.length; i += DELETE_BATCH_SIZE) {
+      const batch = blocksToDelete.slice(i, i + DELETE_BATCH_SIZE);
+      await Promise.all(
+        batch.map((block) =>
+          this.request("DELETE", `/blocks/${block.id}`).catch((error) => {
+            console.error("[NotionApiClient] Failed to delete block:", error);
+          })
+        )
+      );
     }
 
     // Convert markdown to blocks and add
