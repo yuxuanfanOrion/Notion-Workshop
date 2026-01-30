@@ -14,6 +14,12 @@ export interface NotionPageInfo {
   hasChildren: boolean;
 }
 
+export interface NotionRootPage {
+  id: string;
+  title: string;
+  parentType: string;
+}
+
 interface NotionRichText {
   plain_text: string;
 }
@@ -34,6 +40,18 @@ interface NotionPageResponse {
   child_page?: {
     title: string;
   };
+  parent?: {
+    type?: string;
+    page_id?: string;
+    database_id?: string;
+    workspace?: boolean;
+  };
+}
+
+interface NotionSearchResponse {
+  results: NotionPageResponse[];
+  has_more: boolean;
+  next_cursor?: string;
 }
 
 interface NotionBlockResponse {
@@ -130,6 +148,39 @@ export class NotionApiClient {
       console.error("[NotionApiClient] Failed to get page title:", error);
       return "Untitled";
     }
+  }
+
+  async listRootPages(): Promise<NotionRootPage[]> {
+    const allPages: NotionPageResponse[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const response = await this.request<NotionSearchResponse>("POST", "/search", {
+        filter: { property: "object", value: "page" },
+        start_cursor: cursor,
+        page_size: 50,
+        sort: { direction: "descending", timestamp: "last_edited_time" }
+      });
+      allPages.push(...response.results);
+      cursor = response.has_more ? response.next_cursor : undefined;
+    } while (cursor);
+
+    const rootPages: NotionRootPage[] = [];
+    for (const page of allPages) {
+      const parentType = page.parent?.type || "";
+      if (parentType !== "workspace" && parentType !== "user") {
+        continue;
+      }
+      const title = this.extractTitleFromProperties(page.properties) || "Untitled";
+      rootPages.push({
+        id: page.id,
+        title,
+        parentType
+      });
+    }
+
+    rootPages.sort((a, b) => a.title.localeCompare(b.title, "en"));
+    return rootPages;
   }
 
   private extractTitleFromProperties(properties?: NotionPageProperties): string | undefined {

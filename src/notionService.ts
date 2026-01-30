@@ -67,7 +67,16 @@ export class NotionService {
     return this.cachedPages;
   }
 
-  async refreshPages(): Promise<NotionPage[]> {
+  async listRootPages(): Promise<Array<{ id: string; title: string }>> {
+    const configured = await this.isConfigured();
+    if (!configured) {
+      return [];
+    }
+    const roots = await this.apiClient.listRootPages();
+    return roots.map((page) => ({ id: page.id, title: page.title }));
+  }
+
+  async refreshPagesForRoot(rootPageId: string): Promise<NotionPage[]> {
     const configured = await this.isConfigured();
     if (!configured) {
       return [];
@@ -75,11 +84,6 @@ export class NotionService {
 
     this.status = "Fetching pages...";
     try {
-      const rootPageId = this.authManager.getRootPageId();
-      if (!rootPageId) {
-        throw new Error("Root page ID not configured");
-      }
-
       // Get root page info
       const rootTitle = await this.apiClient.getPageTitle(rootPageId);
       const rootPage: NotionPage = {
@@ -93,7 +97,7 @@ export class NotionService {
       // Recursively fetch child pages
       await this.fetchChildPages(rootPage);
 
-      this.cachedPages = [rootPage];
+      this.cachedPages = this.upsertRootPage(this.cachedPages, rootPage);
       await this.savePagesCache();
       await this.migrateLegacyIndexFiles();
       this.status = "Idle";
@@ -103,6 +107,10 @@ export class NotionService {
       console.error("[NotionService] Failed to refresh pages:", error);
       throw error;
     }
+  }
+
+  clearCache(): void {
+    this.cachedPages = [];
   }
 
   private async fetchChildPages(page: NotionPage, depth = 0): Promise<void> {
@@ -262,12 +270,8 @@ export class NotionService {
 
     let parent = this.findPage(this.cachedPages, parentPageId);
     if (!parent) {
-      await this.refreshPages();
-      parent = this.findPage(this.cachedPages, parentPageId);
-    }
-    if (!parent) {
       this.status = "Idle";
-      throw new Error("Parent page not found. Please refresh pages and try again.");
+      throw new Error("Parent page not found in cache. Expand the root page first.");
     }
     parent.children = parent.children || [];
     parent.children.push(newPage);
@@ -475,5 +479,11 @@ export class NotionService {
   private async savePagesCache(): Promise<void> {
     const payload = JSON.stringify(this.cachedPages, null, 2);
     await vscode.workspace.fs.writeFile(this.cacheFile, Buffer.from(payload, "utf8"));
+  }
+
+  private upsertRootPage(pages: NotionPage[], rootPage: NotionPage): NotionPage[] {
+    const next = pages.filter((page) => page.id !== rootPage.id);
+    next.push(rootPage);
+    return next;
   }
 }

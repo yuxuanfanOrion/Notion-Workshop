@@ -50,6 +50,20 @@ class PageItem extends NotionTreeItem {
   }
 }
 
+// Root page item
+class RootPageItem extends NotionTreeItem {
+  constructor(
+    public readonly page: NotionPage,
+    collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super(page.title, collapsibleState);
+    this.iconPath = new vscode.ThemeIcon("folder");
+    this.contextValue = "rootPage";
+    this.tooltip = page.title;
+    this.description = page.id.substring(0, 8) + "...";
+  }
+}
+
 // Loading item
 class LoadingItem extends NotionTreeItem {
   constructor() {
@@ -98,16 +112,56 @@ export class NotionTreeProvider
       return [new LoginItem()];
     }
 
-    // Root node: get top-level pages
+    // Root node: list root pages or a selected root
     if (!element) {
       try {
-        const pages = await this.notionService.listPages();
-        if (pages.length === 0) {
-          return [new EmptyItem("No pages found. Click refresh to fetch.")];
+        const activeRootId = this.authManager.getActiveRootPageId();
+        if (activeRootId) {
+          const cachedRoots = await this.notionService.listPages();
+          let root = cachedRoots.find((page) => page.id === activeRootId);
+          if (!root) {
+            const refreshed = await this.notionService.refreshPagesForRoot(activeRootId);
+            root = refreshed.find((page) => page.id === activeRootId);
+          }
+          if (!root) {
+            return [new EmptyItem("Selected root page not found. Refresh and try again.")];
+          }
+          return [new RootPageItem(root, vscode.TreeItemCollapsibleState.Collapsed)];
         }
-        return pages.map(
-          (page) =>
-            new PageItem(page, !!(page.children && page.children.length > 0))
+
+        const roots = await this.notionService.listRootPages();
+        if (roots.length === 0) {
+          return [new EmptyItem("No root pages found. Share pages with your integration and refresh.")];
+        }
+        return roots.map(
+          (root) =>
+            new RootPageItem({
+              id: root.id,
+              title: root.title,
+              content: "",
+              updatedAt: new Date().toISOString(),
+              children: []
+            }, vscode.TreeItemCollapsibleState.None)
+        );
+      } catch (error) {
+        return [new EmptyItem(`Failed to fetch: ${(error as Error).message}`)];
+      }
+    }
+
+    // Root page children
+    if (element instanceof RootPageItem) {
+      try {
+        const cachedRoot = await this.notionService.listPages();
+        const found = cachedRoot.find((page) => page.id === element.page.id);
+        const root = found || (await this.notionService.refreshPagesForRoot(element.page.id)).find(
+          (page) => page.id === element.page.id
+        );
+        const children = root?.children || [];
+        if (children.length === 0) {
+          return [new EmptyItem("No pages under this root.")];
+        }
+        return children.map(
+          (page) => new PageItem(page, !!(page.children && page.children.length > 0))
         );
       } catch (error) {
         return [new EmptyItem(`Failed to fetch: ${(error as Error).message}`)];

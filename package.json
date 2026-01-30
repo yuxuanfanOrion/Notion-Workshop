@@ -31,6 +31,12 @@
         "icon": "$(debug-disconnect)"
       },
       {
+        "command": "notion-workshop.selectRoot",
+        "title": "Notion: Focus Root Page",
+        "category": "Notion",
+        "icon": "$(chevron-right)"
+      },
+      {
         "command": "notion-workshop.refresh",
         "title": "Notion: Refresh Pages",
         "category": "Notion",
@@ -115,6 +121,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "notion-workshop.selectRoot",
+          "when": "view == notion-workshop.pages && viewItem == rootPage",
+          "group": "inline@1"
+        },
         {
           "command": "notion-workshop.push",
           "when": "view == notion-workshop.pages && viewItem == page",

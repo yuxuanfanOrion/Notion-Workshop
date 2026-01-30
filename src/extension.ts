@@ -38,26 +38,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("notion-workshop.login", async () => {
       const success = await authManager.promptForConfig();
       if (success) {
-        logger.add("Notion configured. Fetching pages...");
-        try {
-          await vscode.window.withProgress(
-            {
-              location: vscode.ProgressLocation.Notification,
-              title: "Fetching pages from Notion...",
-              cancellable: false,
-            },
-            async () => {
-              await notionService.refreshPages();
-            }
-          );
-          logger.add("Pages fetched successfully");
-          treeProvider.refresh();
-          void vscode.window.showInformationMessage("Notion configured. Pages loaded.");
-        } catch (error) {
-          const msg = (error as Error).message || "Failed to fetch pages";
-          logger.add(`Failed to fetch pages: ${msg}`, "error");
-          void vscode.window.showErrorMessage(`Failed to fetch pages: ${msg}`);
-        }
+        logger.add("Notion configured.");
+        await authManager.setActiveRootPageId(undefined);
+        notionService.clearCache();
+        treeProvider.refresh();
+        void vscode.window.showInformationMessage("Notion configured. Select a root page from the sidebar.");
       }
     })
   );
@@ -67,26 +52,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("notion-workshop.refresh", async () => {
       const token = await authManager.getToken();
       if (!token) {
-        void vscode.window.showWarningMessage("Please configure Notion API Token first");
+        void vscode.window.showWarningMessage("Please configure Notion token first");
         return;
       }
       try {
         await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: "Refreshing page list...",
+            title: "Refreshing root list...",
             cancellable: false,
           },
           async () => {
-            await notionService.refreshPages();
+            await authManager.setActiveRootPageId(undefined);
+            notionService.clearCache();
           }
         );
-        logger.add("Page list refreshed");
+        logger.add("Root list refreshed");
         treeProvider.refresh();
       } catch (error) {
         const msg = (error as Error).message || "Refresh failed";
         logger.add(`Refresh failed: ${msg}`, "error");
         void vscode.window.showErrorMessage(`Refresh failed: ${msg}`);
+      }
+    })
+  );
+
+  // Select root page (focus mode)
+  context.subscriptions.push(
+    vscode.commands.registerCommand("notion-workshop.selectRoot", async (item?: any) => {
+      const rootId: string | undefined = item?.page?.id;
+      if (!rootId) {
+        return;
+      }
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Loading root page...",
+            cancellable: false,
+          },
+          async () => {
+            await authManager.setActiveRootPageId(rootId);
+            await notionService.refreshPagesForRoot(rootId);
+          }
+        );
+        treeProvider.refresh();
+      } catch (error) {
+        const msg = (error as Error).message || "Failed to load root page";
+        logger.add(`Root selection failed: ${msg}`, "error");
+        void vscode.window.showErrorMessage(msg);
       }
     })
   );
@@ -114,7 +128,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const pages = await notionService.listPages();
         const flatPages = notionService.flattenPages(pages);
         if (flatPages.length === 0) {
-          void vscode.window.showWarningMessage("No pages found. Please refresh first.");
+          void vscode.window.showWarningMessage("No pages cached. Expand a root page first.");
           return;
         }
         const pick = await vscode.window.showQuickPick(
@@ -154,7 +168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const pages = await notionService.listPages();
         const flatPages = notionService.flattenPages(pages);
         if (flatPages.length === 0) {
-          void vscode.window.showWarningMessage("No pages found. Please refresh first.");
+          void vscode.window.showWarningMessage("No pages cached. Expand a root page first.");
           return;
         }
         const pick = await vscode.window.showQuickPick(
@@ -225,7 +239,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const pages = await notionService.listPages();
           const flatPages = notionService.flattenPages(pages);
           if (flatPages.length === 0) {
-            void vscode.window.showWarningMessage("No pages found. Please refresh first.");
+            void vscode.window.showWarningMessage("No pages cached. Expand a root page first.");
             return;
           }
           const pick = await vscode.window.showQuickPick(
