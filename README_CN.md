@@ -95,8 +95,9 @@ PORT=8000
 |------|------|--------|
 | `notionWorkshop.token` | Notion 集成令牌 | `""` |
 | `notionWorkshop.databaseId` | 目标 Notion 数据库 ID | `""` |
-| `notionWorkshop.defaultSyncPath` | 本地同步文件夹 | `notion-sync` |
 | `notionWorkshop.filter` | 标题过滤器（子字符串匹配） | `""` |
+
+> **注意：** 同步文件夹路径在首次使用时交互式配置。首次拉取页面时会提示你选择文件夹。
 
 ---
 

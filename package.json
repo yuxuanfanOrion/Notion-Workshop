@@ -80,11 +80,6 @@
           "default": "",
           "description": "Target Notion database ID."
         },
-        "notionWorkshop.defaultSyncPath": {
-          "type": "string",
-          "default": "notion-sync",
-          "description": "Default local folder for Notion pages. Relative paths resolve from the workspace root."
-        },
         "notionWorkshop.filter": {
           "type": "string",
           "default": "",

@@ -30,9 +30,14 @@ export class BlocksApi {
   }
 
   async appendChildren(blockId: string, children: unknown[]): Promise<void> {
-    await this.client.request("PATCH", `/blocks/${blockId}/children`, {
-      children
-    });
+    const BATCH_SIZE = 100; // Notion API limit
+
+    for (let i = 0; i < children.length; i += BATCH_SIZE) {
+      const batch = children.slice(i, i + BATCH_SIZE);
+      await this.client.request("PATCH", `/blocks/${blockId}/children`, {
+        children: batch
+      });
+    }
   }
 
   async deleteBlock(blockId: string): Promise<void> {

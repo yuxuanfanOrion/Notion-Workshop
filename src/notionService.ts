@@ -13,7 +13,6 @@ export interface NotionPage {
 }
 
 export interface NotionConfig {
-  defaultSyncPath: string;
   filter: string;
 }
 
@@ -54,7 +53,6 @@ export class NotionService {
   getConfig(): NotionConfig {
     const config = vscode.workspace.getConfiguration("notionWorkshop");
     return {
-      defaultSyncPath: config.get<string>("defaultSyncPath", "notion-sync"),
       filter: config.get<string>("filter", "")
     };
   }
@@ -335,15 +333,9 @@ export class NotionService {
   }
 
   private async resolveSyncFolder(): Promise<vscode.Uri> {
-    const config = this.getConfig();
-    const workspace = vscode.workspace.workspaceFolders?.[0];
-    if (path.isAbsolute(config.defaultSyncPath)) {
-      return vscode.Uri.file(config.defaultSyncPath);
-    }
-    if (workspace) {
-      return vscode.Uri.joinPath(workspace.uri, config.defaultSyncPath || "notion-sync");
-    }
-    return vscode.Uri.joinPath(this.storageUri, "notion-sync");
+    // Use VS Code extension's global storage path
+    // Typically: ~/.vscode/extensions/globalStorage/yfanorion.notion-workshop/
+    return vscode.Uri.joinPath(this.storageUri, "pages");
   }
 
   private async findPageFile(pageId: string): Promise<vscode.Uri | undefined> {

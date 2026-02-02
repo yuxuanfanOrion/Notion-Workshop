@@ -270,7 +270,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
         );
         logger.add(`Pushed page ${pageTitle || pageId}`);
-        void vscode.window.showInformationMessage(`Pushed ${pageTitle || pageId}`);
       } catch (error) {
         logger.add(`Push failed: ${(error as Error).message}`, "error");
         void vscode.window.showErrorMessage((error as Error).message);
@@ -299,21 +298,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const timer = setTimeout(async () => {
         autoPushDebounceMap.delete(pageId);
         try {
-          await vscode.window.withProgress(
-            {
-              location: vscode.ProgressLocation.Notification,
-              title: "Auto-pushing to Notion...",
-              cancellable: false,
-            },
-            async () => {
-              await notionService.pushPage(pageId);
-            }
-          );
+          await notionService.pushPage(pageId);
           logger.add("Auto-pushed page");
-          void vscode.window.showInformationMessage("Auto-pushed to Notion");
         } catch (error) {
           logger.add(`Auto-push failed: ${(error as Error).message}`, "error");
-          void vscode.window.showErrorMessage(`Auto-push failed: ${(error as Error).message}`);
         }
       }, AUTO_PUSH_DELAY_MS);
 

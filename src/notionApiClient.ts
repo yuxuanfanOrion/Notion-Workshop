@@ -676,11 +676,13 @@ export class NotionApiClient {
       );
     }
 
-    // Convert markdown to blocks and add
+    // Convert markdown to blocks and add (batch to respect 100 block limit)
     const blocks = this.markdownToBlocks(markdown);
-    if (blocks.length > 0) {
+    const APPEND_BATCH_SIZE = 100; // Notion API limit
+    for (let i = 0; i < blocks.length; i += APPEND_BATCH_SIZE) {
+      const batch = blocks.slice(i, i + APPEND_BATCH_SIZE);
       await this.request("PATCH", `/blocks/${pageId}/children`, {
-        children: blocks
+        children: batch
       });
     }
   }

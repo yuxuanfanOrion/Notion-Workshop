@@ -95,8 +95,9 @@ Open VS Code settings and search for **Notion Workshop**:
 |---------|-------------|---------|
 | `notionWorkshop.token` | Notion integration token | `""` |
 | `notionWorkshop.databaseId` | Target Notion database ID | `""` |
-| `notionWorkshop.defaultSyncPath` | Local sync folder | `notion-sync` |
 | `notionWorkshop.filter` | Title filter (substring match) | `""` |
+
+> **Note:** The sync folder path is configured interactively on first use. You'll be prompted to select a folder when you first pull a page.
 
 ---
 
