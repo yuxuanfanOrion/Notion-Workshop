@@ -1,0 +1,25 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景渐变 -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2D2D2D"/>
+      <stop offset="100%" style="stop-color:#1A1A1A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角背景 -->
+  <rect x="8" y="8" width="112" height="112" rx="20" fill="url(#bgGradient)"/>
+
+  <!-- Notion 风格页面 -->
+  <rect x="28" y="24" width="72" height="80" rx="6" fill="#FFFFFF"/>
+
+  <!-- 页面内的线条 (模拟文本) -->
+  <rect x="38" y="36" width="40" height="4" rx="2" fill="#E0E0E0"/>
+  <rect x="38" y="48" width="52" height="4" rx="2" fill="#E0E0E0"/>
+  <rect x="38" y="60" width="36" height="4" rx="2" fill="#E0E0E0"/>
+  <rect x="38" y="72" width="48" height="4" rx="2" fill="#E0E0E0"/>
+
+  <!-- 同步箭头 (右下角) -->
+  <circle cx="92" cy="92" r="20" fill="#4A9EFF"/>
+  <path d="M84 88L92 80L100 88M84 96L92 104L100 96" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -21,7 +21,21 @@ export interface NotionRootPage {
 }
 
 interface NotionRichText {
+  type: "text" | "mention" | "equation";
   plain_text: string;
+  href?: string | null;
+  text?: {
+    content: string;
+    link?: { url: string } | null;
+  };
+  annotations?: {
+    bold: boolean;
+    italic: boolean;
+    strikethrough: boolean;
+    underline: boolean;
+    code: boolean;
+    color: string;
+  };
 }
 
 interface NotionPropertyValue {
@@ -130,35 +144,57 @@ export class NotionApiClient {
 
     const headers = await this.getHeaders();
 
-    // Add 30-second timeout using AbortController
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // Retry logic for network errors
+    const maxRetries = 3;
+    let lastError: Error | null = null;
 
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timeoutId);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Add 30-second timeout using AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      try {
+        const response = await fetch(`${this.baseUrl}${endpoint}`, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const error = await response.text();
+          console.error("[NotionApiClient] API error:", response.status, error);
+          throw new Error(`Notion API error: ${response.status} - ${error}`);
+        }
+
+        const result = (await response.json()) as T;
+
+        if (cacheKey) {
+          this.setCachedResult(cacheKey, result);
+        }
+
+        return result;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        lastError = fetchError as Error;
+
+        // Don't retry on API errors (4xx, 5xx), only on network errors
+        if (lastError.message.startsWith("Notion API error:")) {
+          throw lastError;
+        }
+
+        console.warn(`[NotionApiClient] Attempt ${attempt}/${maxRetries} failed for ${endpoint}:`, lastError.message);
+
+        if (attempt < maxRetries) {
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+      }
     }
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("[NotionApiClient] API error:", response.status, error);
-      throw new Error(`Notion API error: ${response.status} - ${error}`);
-    }
-
-    const result = (await response.json()) as T;
-    
-    if (cacheKey) {
-      this.setCachedResult(cacheKey, result);
-    }
-    
-    return result;
+    console.error("[NotionApiClient] All retries failed for:", endpoint);
+    throw new Error(`Network error after ${maxRetries} retries: ${lastError?.message}`);
   }
 
   private async getBlock(blockId: string): Promise<NotionBlockResponse> {
@@ -297,14 +333,62 @@ export class NotionApiClient {
 
   async getPageContent(pageId: string): Promise<string> {
     const blocks = await this.getBlockChildren(pageId);
-    return this.blocksToMarkdown(blocks);
+    return await this.blocksToMarkdown(blocks, 0, 10);
   }
 
-  private blocksToMarkdown(blocks: NotionBlock[]): string {
+  private getIndent(depth: number): string {
+    return "  ".repeat(depth);
+  }
+
+  private async fetchBlockChildrenContent(
+    blockId: string,
+    depth: number,
+    maxDepth: number
+  ): Promise<string> {
+    if (depth >= maxDepth) {
+      return "";
+    }
+
+    try {
+      const children = await this.getBlockChildren(blockId);
+      if (children.length === 0) {
+        return "";
+      }
+
+      return await this.blocksToMarkdown(children, depth + 1, maxDepth);
+    } catch (error) {
+      console.error(`[NotionApiClient] Failed to fetch children for block ${blockId}:`, error);
+      return "";
+    }
+  }
+
+  private async blocksToMarkdown(
+    blocks: NotionBlock[],
+    depth: number = 0,
+    maxDepth: number = 10
+  ): Promise<string> {
+    // Pre-fetch children in parallel batches for better performance
+    // Exclude child_page and child_database as they are handled separately
+    const blocksWithChildren = blocks.filter(
+      (b) => b.has_children && b.type !== "child_page" && b.type !== "child_database"
+    );
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < blocksWithChildren.length; i += BATCH_SIZE) {
+      const batch = blocksWithChildren.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map((b) =>
+          this.getBlockChildren(b.id).catch((err) => {
+            console.error(`[NotionApiClient] Pre-fetch failed for block ${b.id}:`, err);
+            return [];
+          })
+        )
+      );
+    }
+
     const lines: string[] = [];
 
     for (const block of blocks) {
-      const line = this.blockToMarkdown(block);
+      const line = await this.blockToMarkdown(block, depth, maxDepth);
       if (line !== null) {
         lines.push(line);
       }
@@ -313,7 +397,11 @@ export class NotionApiClient {
     return lines.join("\n\n");
   }
 
-  private blockToMarkdown(block: NotionBlock): string | null {
+  private async blockToMarkdown(
+    block: NotionBlock,
+    depth: number = 0,
+    maxDepth: number = 10
+  ): Promise<string | null> {
     const type = block.type;
     const data = block[type] as Record<string, unknown> | undefined;
 
@@ -321,32 +409,78 @@ export class NotionApiClient {
       return null;
     }
 
+    const indent = this.getIndent(depth);
+
     switch (type) {
-      case "paragraph":
-        return this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+      case "paragraph": {
+        const text = this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+        return indent + text;
+      }
 
       case "heading_1":
-        return `# ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+        return `${indent}# ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
 
       case "heading_2":
-        return `## ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+        return `${indent}## ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
 
       case "heading_3":
-        return `### ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+        return `${indent}### ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
 
-      case "bulleted_list_item":
-        return `- ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+      case "bulleted_list_item": {
+        const text = this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+        let result = `${indent}- ${text}`;
 
-      case "numbered_list_item":
-        return `1. ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+        if (block.has_children) {
+          const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+          if (childContent) {
+            result += "\n" + childContent;
+          }
+        }
+
+        return result;
+      }
+
+      case "numbered_list_item": {
+        const text = this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+        let result = `${indent}1. ${text}`;
+
+        if (block.has_children) {
+          const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+          if (childContent) {
+            result += "\n" + childContent;
+          }
+        }
+
+        return result;
+      }
 
       case "to_do": {
         const checked = data.checked ? "x" : " ";
-        return `- [${checked}] ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+        let result = `${indent}- [${checked}] ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+
+        if (block.has_children) {
+          const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+          if (childContent) {
+            result += "\n" + childContent;
+          }
+        }
+
+        return result;
       }
 
-      case "toggle":
-        return `<details><summary>${this.richTextToMarkdown(data.rich_text as NotionRichText[])}</summary></details>`;
+      case "toggle": {
+        const summary = this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+        let childContent = "";
+
+        if (block.has_children) {
+          childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+        }
+
+        if (childContent) {
+          return `${indent}<details><summary>${summary}</summary>\n\n${childContent}\n\n${indent}</details>`;
+        }
+        return `${indent}<details><summary>${summary}</summary></details>`;
+      }
 
       case "code": {
         const language = (data.language as string) || "";
@@ -354,28 +488,130 @@ export class NotionApiClient {
         return `\`\`\`${language}\n${code}\n\`\`\``;
       }
 
-      case "quote":
-        return `> ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+      case "quote": {
+        const text = this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+        let result = `${indent}> ${text}`;
+
+        if (block.has_children) {
+          const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+          if (childContent) {
+            const quotedChildren = childContent
+              .split("\n")
+              .map((line) => (line ? `${indent}> ${line}` : `${indent}>`))
+              .join("\n");
+            result += "\n" + quotedChildren;
+          }
+        }
+
+        return result;
+      }
 
       case "divider":
-        return "---";
+        return `${indent}---`;
 
       case "callout": {
         const icon = (data.icon as { emoji?: string })?.emoji || "💡";
-        return `> ${icon} ${this.richTextToMarkdown(data.rich_text as NotionRichText[])}`;
+        const text = this.richTextToMarkdown(data.rich_text as NotionRichText[]);
+        let result = `${indent}> ${icon} ${text}`;
+
+        if (block.has_children) {
+          const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+          if (childContent) {
+            const quotedChildren = childContent
+              .split("\n")
+              .map((line) => (line ? `${indent}> ${line}` : `${indent}>`))
+              .join("\n");
+            result += "\n" + quotedChildren;
+          }
+        }
+
+        return result;
       }
 
       case "image": {
         const imageData = data as { type: string; file?: { url: string }; external?: { url: string } };
         const url = imageData.type === "file" ? imageData.file?.url : imageData.external?.url;
-        return url ? `![image](${url})` : null;
+        return url ? `${indent}![image](${url})` : null;
       }
 
       case "bookmark":
       case "link_preview": {
         const urlData = data as { url?: string };
-        return urlData.url ? `[${urlData.url}](${urlData.url})` : null;
+        return urlData.url ? `${indent}[${urlData.url}](${urlData.url})` : null;
       }
+
+      case "column_list": {
+        if (!block.has_children) {
+          return null;
+        }
+        const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+        return childContent || null;
+      }
+
+      case "column": {
+        if (!block.has_children) {
+          return null;
+        }
+        const childContent = await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+        return childContent || null;
+      }
+
+      case "synced_block": {
+        const syncedFrom = (data as { synced_from?: { block_id: string } }).synced_from;
+
+        if (syncedFrom?.block_id) {
+          const originalChildren = await this.getBlockChildren(syncedFrom.block_id);
+          return await this.blocksToMarkdown(originalChildren, depth, maxDepth);
+        }
+
+        if (block.has_children) {
+          return await this.fetchBlockChildrenContent(block.id, depth, maxDepth);
+        }
+
+        return null;
+      }
+
+      case "table": {
+        if (!block.has_children) {
+          return null;
+        }
+
+        try {
+          const rows = await this.getBlockChildren(block.id);
+          if (rows.length === 0) {
+            return null;
+          }
+
+          const tableLines: string[] = [];
+
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            if (row.type !== "table_row") {
+              continue;
+            }
+
+            const rowData = row.table_row as { cells?: NotionRichText[][] };
+            const cells = rowData?.cells || [];
+            const cellTexts = cells.map((cell) => this.richTextToMarkdown(cell));
+            tableLines.push(`${indent}| ${cellTexts.join(" | ")} |`);
+
+            // Add header separator after first row
+            if (i === 0) {
+              const separator = cells.map(() => "---").join(" | ");
+              tableLines.push(`${indent}| ${separator} |`);
+            }
+          }
+
+          return tableLines.join("\n");
+        } catch (error) {
+          console.error(`[NotionApiClient] Failed to fetch table rows:`, error);
+          return null;
+        }
+      }
+
+      case "table_row":
+        // Table rows are handled by the table block
+        return null;
 
       case "child_page":
         // Child pages are handled separately, skip here
@@ -391,7 +627,33 @@ export class NotionApiClient {
     if (!richText || !Array.isArray(richText)) {
       return "";
     }
-    return richText.map((t) => t.plain_text).join("");
+
+    return richText.map((t) => {
+      let text = t.plain_text;
+      const annotations = t.annotations;
+
+      // Handle links
+      const link = t.text?.link?.url || t.href;
+      if (link) {
+        text = `[${text}](${link})`;
+      }
+
+      // Handle formatting (order matters: code innermost)
+      if (annotations?.code) {
+        text = `\`${text}\``;
+      }
+      if (annotations?.strikethrough) {
+        text = `~~${text}~~`;
+      }
+      if (annotations?.italic) {
+        text = `*${text}*`;
+      }
+      if (annotations?.bold) {
+        text = `**${text}**`;
+      }
+
+      return text;
+    }).join("");
   }
 
   async updatePageContent(pageId: string, markdown: string): Promise<void> {
@@ -443,75 +705,110 @@ export class NotionApiClient {
   private markdownToBlocks(markdown: string): unknown[] {
     const lines = markdown.split("\n");
     const blocks: unknown[] = [];
+    let i = 0;
 
-    for (const line of lines) {
+    while (i < lines.length) {
+      const line = lines[i];
       const trimmed = line.trim();
+
+      // Skip empty lines
       if (!trimmed) {
+        i++;
         continue;
       }
 
       // Skip notion-id comment
       if (trimmed.startsWith("<!--") && trimmed.includes("notion-id")) {
+        i++;
         continue;
       }
 
       let block: unknown = null;
 
-      if (trimmed.startsWith("### ")) {
+      // Handle code blocks
+      if (trimmed.startsWith("```")) {
+        const language = trimmed.slice(3).trim();
+        const codeLines: string[] = [];
+        i++;
+
+        while (i < lines.length && !lines[i].trim().startsWith("```")) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        i++; // Skip closing ```
+
+        block = {
+          object: "block",
+          type: "code",
+          code: {
+            rich_text: [{ type: "text", text: { content: codeLines.join("\n") } }],
+            language: language || "plain text"
+          }
+        };
+      } else if (trimmed.startsWith("### ")) {
         block = {
           object: "block",
           type: "heading_3",
-          heading_3: { rich_text: [{ type: "text", text: { content: trimmed.slice(4) } }] }
+          heading_3: { rich_text: this.parseInlineFormatting(trimmed.slice(4)) }
         };
+        i++;
       } else if (trimmed.startsWith("## ")) {
         block = {
           object: "block",
           type: "heading_2",
-          heading_2: { rich_text: [{ type: "text", text: { content: trimmed.slice(3) } }] }
+          heading_2: { rich_text: this.parseInlineFormatting(trimmed.slice(3)) }
         };
+        i++;
       } else if (trimmed.startsWith("# ")) {
         block = {
           object: "block",
           type: "heading_1",
-          heading_1: { rich_text: [{ type: "text", text: { content: trimmed.slice(2) } }] }
+          heading_1: { rich_text: this.parseInlineFormatting(trimmed.slice(2)) }
         };
+        i++;
       } else if (trimmed.startsWith("- [x] ") || trimmed.startsWith("- [ ] ")) {
         const checked = trimmed.startsWith("- [x] ");
         block = {
           object: "block",
           type: "to_do",
           to_do: {
-            rich_text: [{ type: "text", text: { content: trimmed.slice(6) } }],
+            rich_text: this.parseInlineFormatting(trimmed.slice(6)),
             checked
           }
         };
+        i++;
       } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
         block = {
           object: "block",
           type: "bulleted_list_item",
-          bulleted_list_item: { rich_text: [{ type: "text", text: { content: trimmed.slice(2) } }] }
+          bulleted_list_item: { rich_text: this.parseInlineFormatting(trimmed.slice(2)) }
         };
+        i++;
       } else if (/^\d+\.\s/.test(trimmed)) {
         const content = trimmed.replace(/^\d+\.\s/, "");
         block = {
           object: "block",
           type: "numbered_list_item",
-          numbered_list_item: { rich_text: [{ type: "text", text: { content } }] }
+          numbered_list_item: { rich_text: this.parseInlineFormatting(content) }
         };
+        i++;
       } else if (trimmed.startsWith("> ")) {
         block = {
           object: "block",
           type: "quote",
-          quote: { rich_text: [{ type: "text", text: { content: trimmed.slice(2) } }] }
+          quote: { rich_text: this.parseInlineFormatting(trimmed.slice(2)) }
         };
+        i++;
       } else if (trimmed === "---") {
         block = { object: "block", type: "divider", divider: {} };
+        i++;
       } else {
         block = {
           object: "block",
           type: "paragraph",
-          paragraph: { rich_text: [{ type: "text", text: { content: trimmed } }] }
+          paragraph: { rich_text: this.parseInlineFormatting(trimmed) }
         };
+        i++;
       }
 
       if (block) {
@@ -520,5 +817,79 @@ export class NotionApiClient {
     }
 
     return blocks;
+  }
+
+  private parseInlineFormatting(text: string): unknown[] {
+    const richText: unknown[] = [];
+    // Regex to match: **bold**, *italic*, `code`, ~~strikethrough~~, [link](url)
+    const pattern = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`|~~(.+?)~~|\[(.+?)\]\((.+?)\))/g;
+
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+      // Add plain text before this match
+      if (match.index > lastIndex) {
+        const plainText = text.slice(lastIndex, match.index);
+        if (plainText) {
+          richText.push({ type: "text", text: { content: plainText } });
+        }
+      }
+
+      const fullMatch = match[0];
+
+      if (fullMatch.startsWith("**") && fullMatch.endsWith("**")) {
+        // Bold
+        richText.push({
+          type: "text",
+          text: { content: match[2] },
+          annotations: { bold: true }
+        });
+      } else if (fullMatch.startsWith("~~") && fullMatch.endsWith("~~")) {
+        // Strikethrough
+        richText.push({
+          type: "text",
+          text: { content: match[5] },
+          annotations: { strikethrough: true }
+        });
+      } else if (fullMatch.startsWith("`") && fullMatch.endsWith("`")) {
+        // Code
+        richText.push({
+          type: "text",
+          text: { content: match[4] },
+          annotations: { code: true }
+        });
+      } else if (fullMatch.startsWith("[") && fullMatch.includes("](")) {
+        // Link
+        richText.push({
+          type: "text",
+          text: { content: match[6], link: { url: match[7] } }
+        });
+      } else if (fullMatch.startsWith("*") && fullMatch.endsWith("*")) {
+        // Italic (check after bold)
+        richText.push({
+          type: "text",
+          text: { content: match[3] },
+          annotations: { italic: true }
+        });
+      }
+
+      lastIndex = match.index + fullMatch.length;
+    }
+
+    // Add remaining plain text
+    if (lastIndex < text.length) {
+      const remaining = text.slice(lastIndex);
+      if (remaining) {
+        richText.push({ type: "text", text: { content: remaining } });
+      }
+    }
+
+    // If no formatting found, return simple text
+    if (richText.length === 0) {
+      return [{ type: "text", text: { content: text } }];
+    }
+
+    return richText;
   }
 }

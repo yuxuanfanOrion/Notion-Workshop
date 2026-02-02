@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { AuthManager } from "./authManager";
-import { NotionApiClient } from "./notionApiClient";
+import { NotionApiClient } from "./notion";
 
 export interface NotionPage {
   id: string;

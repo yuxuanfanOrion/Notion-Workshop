@@ -1,0 +1,18 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 深色背景 -->
+  <rect x="8" y="8" width="112" height="112" rx="20" fill="#1E1E1E"/>
+
+  <!-- 左侧: VSCode 风格代码括号 -->
+  <path d="M32 44L20 64L32 84" stroke="#569CD6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 右侧: 闭合括号 -->
+  <path d="M96 44L108 64L96 84" stroke="#569CD6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 中间: Notion "N" 字母 (优雅设计) -->
+  <path d="M48 82V46H56L72 70V46H80V82H72L56 58V82H48Z" fill="#FFFFFF"/>
+
+  <!-- 底部连接线 (表示同步) -->
+  <rect x="44" y="96" width="40" height="3" rx="1.5" fill="#4EC9B0"/>
+  <circle cx="44" cy="97.5" r="4" fill="#4EC9B0"/>
+  <circle cx="84" cy="97.5" r="4" fill="#4EC9B0"/>
+</svg>

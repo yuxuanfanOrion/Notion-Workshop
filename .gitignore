@@ -47,3 +47,5 @@ docs/README.developer.md
 pages-cache.json
 
 scripts/auto_push.sh
+
+claude.md
