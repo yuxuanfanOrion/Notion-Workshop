@@ -1,5 +1,7 @@
 # Notion Workshop
 
+**[English](./README.md)** | **[中文](./README_CN.md)**
+
 Hi, this is [Eason](https://yuxuanfanorion.github.io/).
 
 This project is still under development. Feel free to open issues or PRs.
@@ -16,6 +18,9 @@ A VS Code extension that lets you browse Notion pages, open them locally as Mark
 - ⚡ Parallel API requests for fast sync
 - 💾 Request caching to reduce API calls
 - 🗂️ Local sync folders with per-page `<title>.md` (file + folder side by side)
+- 📝 Rich block type support (headings, toggles, tables, callouts, and more)
+
+See [Format Mapping](./docs/format-mapping.md) for the complete list of supported Notion blocks.
 
 ## 📋 Requirements
 
@@ -79,6 +84,7 @@ PORT=8000
 | `Notion: Refresh Pages` | Reload pages from Notion |
 | `Notion: Push` | Manually push current page |
 | `Notion: New Page` | Create a child page |
+| `Notion: Focus Root Page` | Set a page as the root for navigation |
 | `Notion: Logout` | Clear configuration |
 
 ### Settings
@@ -87,6 +93,8 @@ Open VS Code settings and search for **Notion Workshop**:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
+| `notionWorkshop.token` | Notion integration token | `""` |
+| `notionWorkshop.databaseId` | Target Notion database ID | `""` |
 | `notionWorkshop.defaultSyncPath` | Local sync folder | `notion-sync` |
 | `notionWorkshop.filter` | Title filter (substring match) | `""` |
 
@@ -117,7 +125,7 @@ The first line of each `.md` file contains a metadata comment:
 ### Build from Source
 
 ```bash
-git clone https://github.com/YuxuanFanOrion/Notion-Workshop.git
+git clone https://github.com/yfanorion/Notion-Workshop.git
 cd Notion-Workshop
 npm install
 npm run compile
