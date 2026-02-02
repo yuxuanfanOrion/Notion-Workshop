@@ -40,8 +40,8 @@ Overleaf-Workshop/
 # Developer README (local only)
 docs/README.developer.md
 
-# Notion sync data (optional)
-# notion-sync/
+# Notion sync data
+notion-sync/
 
 # Page cache
 pages-cache.json
