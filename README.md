@@ -1,3 +1,5 @@
+
+
 # Notion Workshop
 
 **[English](./README.md)** | **[中文](./README_CN.md)**
@@ -63,7 +65,7 @@ See [Format Mapping](./docs/format-mapping.md) for the complete list of supporte
 
 ### Environment Variables (Optional)
 
-For development or advanced usage, create a `.env` file:
+For the Python web server, create a `.env` file:
 
 ```env
 NOTION_TOKEN=ntn_your_token_here
